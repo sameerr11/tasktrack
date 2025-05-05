@@ -1,6 +1,38 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'CloudFormation template for TaskTrack application infrastructure'
 
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0fc5d935ebf8bc3bc # Amazon Linux 2023 AMI in us-east-1
+    us-east-2:
+      AMI: ami-0c20d96b50071cec3 # Amazon Linux 2023 AMI in us-east-2
+    us-west-1:
+      AMI: ami-0487cee76e7fd86e5 # Amazon Linux 2023 AMI in us-west-1
+    us-west-2:
+      AMI: ami-0efce26b1845e6d71 # Amazon Linux 2023 AMI in us-west-2
+    eu-west-1:
+      AMI: ami-0c9110dc5a5e2fd2d # Amazon Linux 2023 AMI in eu-west-1
+
+  EnvironmentMap:
+    dev:
+      InstanceType: t2.micro
+      MultiAZ: false
+      BackupRetention: 1
+    test:
+      InstanceType: t2.small
+      MultiAZ: false
+      BackupRetention: 3
+    prod:
+      InstanceType: t2.medium
+      MultiAZ: true
+      BackupRetention: 7
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, "prod"]
+  IsMultiAZDatabase: !Or [!Equals [!Ref Environment, "prod"], !Equals [!Ref MultiAZDatabase, "true"]]
+  CreateCloudFrontDistribution: !Equals [!Ref EnableCDN, "true"]
+
 Parameters:
   VpcCIDR:
     Description: CIDR block for the VPC
@@ -46,6 +78,31 @@ Parameters:
     Description: Name for the S3 bucket
     Type: String
     Default: tasktrack-attachments
+
+  Environment:
+    Description: Deployment environment
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - test
+      - prod
+  
+  MultiAZDatabase:
+    Description: Deploy RDS in Multi-AZ configuration
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+  
+  EnableCDN:
+    Description: Deploy CloudFront CDN for frontend
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
 
 Resources:
   # VPC and Networking
@@ -255,16 +312,16 @@ Resources:
       DBName: tasktrack
       Engine: postgres
       EngineVersion: 14.3
-      DBInstanceClass: db.t3.micro
+      DBInstanceClass: !FindInMap [EnvironmentMap, !Ref Environment, InstanceType]
       AllocatedStorage: 20
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword
       VPCSecurityGroups:
         - !GetAtt RDSSecurityGroup.GroupId
       DBSubnetGroupName: !Ref DBSubnetGroup
-      MultiAZ: false
+      MultiAZ: !FindInMap [EnvironmentMap, !Ref Environment, MultiAZ]
       PubliclyAccessible: false
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: !FindInMap [EnvironmentMap, !Ref Environment, BackupRetention]
       Tags:
         - Key: Name
           Value: TaskTrack-Database
@@ -303,6 +360,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
       Path: /
       Tags:
         - Key: Name
@@ -314,54 +372,6 @@ Resources:
       Path: /
       Roles:
         - !Ref EC2Role
-
-  # EC2 Instance for Backend
-  BackendInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-      InstanceType: !Ref EC2InstanceType
-      ImageId: ami-0c55b159cbfafe1f0
-      SubnetId: !Ref PrivateSubnet1
-      SecurityGroupIds:
-        - !GetAtt BackendSecurityGroup.GroupId
-      IamInstanceProfile: !Ref EC2InstanceProfile
-      UserData:
-        Fn::Base64: !Sub |
-          #!/bin/bash -xe
-          yum update -y
-          amazon-linux-extras install docker -y
-          service docker start
-          usermod -a -G docker ec2-user
-          
-          # Install Git and clone repository
-          yum install -y git
-          git clone https://github.com/your-username/tasktrack.git /home/ec2-user/tasktrack
-          
-          # Configure environment variables
-          cat > /home/ec2-user/tasktrack/backend/.env << EOL
-          PORT=5000
-          NODE_ENV=production
-          
-          DB_DIALECT=postgres
-          DB_HOST=${TaskTrackDatabase.Endpoint.Address}
-          DB_PORT=5432
-          DB_NAME=tasktrack
-          DB_USER=${DBUsername}
-          DB_PASSWORD=${DBPassword}
-          
-          JWT_SECRET=your_secret_key
-          
-          AWS_REGION=${AWS::Region}
-          AWS_S3_BUCKET_NAME=${TaskTrackBucket}
-          EOL
-          
-          # Build and run Docker container
-          cd /home/ec2-user/tasktrack/backend
-          docker build -t tasktrack-backend .
-          docker run -d -p 5000:5000 --env-file .env --name tasktrack-api tasktrack-backend
-      Tags:
-        - Key: Name
-          Value: TaskTrack-Backend
 
   # Application Load Balancer
   ApplicationLoadBalancer:
@@ -387,9 +397,6 @@ Resources:
       Port: 5000
       Protocol: HTTP
       TargetType: instance
-      Targets:
-        - Id: !Ref BackendInstance
-          Port: 5000
       UnhealthyThresholdCount: 5
       VpcId: !Ref TaskTrackVPC
       Tags:
@@ -405,6 +412,270 @@ Resources:
       LoadBalancerArn: !Ref ApplicationLoadBalancer
       Port: 80
       Protocol: HTTP
+
+  # CloudFront Distribution for Frontend
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: CreateCloudFrontDistribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt ApplicationLoadBalancer.DNSName
+            Id: ALBOrigin
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        Enabled: true
+        DefaultCacheBehavior:
+          TargetOriginId: ALBOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: 
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+            Headers:
+              - Authorization
+              - Origin
+              - Access-Control-Request-Headers
+              - Access-Control-Request-Method
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      Tags:
+        - Key: Name
+          Value: TaskTrack-CloudFront
+
+  # Auto Scaling Configuration
+  BackendLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${AWS::StackName}-backend-template'
+      LaunchTemplateData:
+        ImageId: !FindInMap [RegionMap, !Ref AWS::Region, AMI]
+        InstanceType: !FindInMap [EnvironmentMap, !Ref Environment, InstanceType]
+        SecurityGroupIds:
+          - !GetAtt BackendSecurityGroup.GroupId
+        IamInstanceProfile:
+          Name: !Ref EC2InstanceProfile
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            # Update instance and install required software
+            yum update -y
+            yum install -y aws-cli jq
+            amazon-linux-extras install docker -y
+            service docker start
+            usermod -a -G docker ec2-user
+            systemctl enable docker
+            
+            # Install CloudWatch agent
+            yum install -y amazon-cloudwatch-agent
+            
+            # Configure CloudWatch agent
+            cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << EOL
+            {
+              "logs": {
+                "logs_collected": {
+                  "files": {
+                    "collect_list": [
+                      {
+                        "file_path": "/var/log/tasktrack-init.log",
+                        "log_group_name": "${TaskTrackLogGroup}",
+                        "log_stream_name": "{instance_id}/init",
+                        "timezone": "UTC"
+                      },
+                      {
+                        "file_path": "/var/log/docker",
+                        "log_group_name": "${TaskTrackLogGroup}",
+                        "log_stream_name": "{instance_id}/docker",
+                        "timezone": "UTC"
+                      }
+                    ]
+                  }
+                }
+              },
+              "metrics": {
+                "metrics_collected": {
+                  "mem": {
+                    "measurement": ["mem_used_percent"]
+                  },
+                  "disk": {
+                    "measurement": ["disk_used_percent"],
+                    "resources": ["/"]
+                  }
+                }
+              }
+            }
+            EOL
+            
+            # Start CloudWatch agent
+            systemctl enable amazon-cloudwatch-agent
+            systemctl start amazon-cloudwatch-agent
+            
+            # Install Git and clone repository
+            yum install -y git
+            git clone https://github.com/your-username/tasktrack.git /home/ec2-user/tasktrack
+            
+            # Set log file
+            LOG_FILE="/var/log/tasktrack-init.log"
+            touch $LOG_FILE
+            chmod 664 $LOG_FILE
+            
+            echo "Starting TaskTrack backend setup at $(date)" >> $LOG_FILE
+            
+            # Configure environment variables
+            mkdir -p /home/ec2-user/tasktrack/backend
+            cat > /home/ec2-user/tasktrack/backend/.env << EOL
+            PORT=5000
+            NODE_ENV=${Environment}
+            
+            DB_DIALECT=postgres
+            DB_HOST=${TaskTrackDatabase.Endpoint.Address}
+            DB_PORT=5432
+            DB_NAME=tasktrack
+            DB_USER=${DBUsername}
+            DB_PASSWORD=${DBPassword}
+            
+            JWT_SECRET=$(openssl rand -hex 32)
+            
+            AWS_REGION=${AWS::Region}
+            AWS_S3_BUCKET_NAME=${TaskTrackBucket}
+            EOL
+            
+            # Build and run Docker container
+            cd /home/ec2-user/tasktrack/backend
+            
+            # Retry mechanism for Docker build
+            MAX_ATTEMPTS=3
+            ATTEMPT=1
+            
+            echo "Starting Docker build at $(date)" >> $LOG_FILE
+            
+            until docker build -t tasktrack-backend . >> $LOG_FILE 2>&1 || [ $ATTEMPT -eq $MAX_ATTEMPTS ]; do
+              echo "Docker build attempt $ATTEMPT failed, retrying in 10 seconds..." >> $LOG_FILE
+              ATTEMPT=$((ATTEMPT+1))
+              sleep 10
+            done
+            
+            if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+              echo "Failed to build Docker image after $MAX_ATTEMPTS attempts" >> $LOG_FILE
+              /opt/aws/bin/cfn-signal -e 1 --resource BackendAutoScalingGroup --region ${AWS::Region}
+              exit 1
+            fi
+            
+            echo "Docker build successful, running container at $(date)" >> $LOG_FILE
+            
+            # Run the container
+            docker run -d -p 5000:5000 --restart always --env-file .env --name tasktrack-api tasktrack-backend >> $LOG_FILE 2>&1
+            
+            echo "Setup completed successfully at $(date)" >> $LOG_FILE
+            
+            # Signal success
+            /opt/aws/bin/cfn-signal -e $? --resource BackendAutoScalingGroup --region ${AWS::Region}
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: TaskTrack-Backend-ASG
+
+  BackendAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: TaskTrackDatabase
+    Properties:
+      AutoScalingGroupName: !Sub '${AWS::StackName}-backend-asg'
+      MinSize: !If [IsProduction, 2, 1]
+      MaxSize: !If [IsProduction, 6, 2]
+      DesiredCapacity: !If [IsProduction, 2, 1]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref BackendLaunchTemplate
+        Version: !GetAtt BackendLaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Backend-ASG
+          PropagateAtLaunch: true
+    CreationPolicy:
+      ResourceSignal:
+        Count: !If [IsProduction, 2, 1]
+        Timeout: PT15M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: !If [IsProduction, 1, 0]
+        MaxBatchSize: 1
+        PauseTime: PT15M
+        WaitOnResourceSignals: true
+
+  ScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref BackendAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+
+  # CloudWatch Alarms for Monitoring
+  HighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alarm if CPU exceeds 80% for 5 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      AlarmActions:
+        - !Ref ScaleUpPolicy
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref BackendAutoScalingGroup
+
+  DatabaseCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alarm if database CPU exceeds 80% for 5 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref TaskTrackDatabase
+
+  # CloudWatch Log Groups
+  TaskTrackLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ec2/${AWS::StackName}-backend'
+      RetentionInDays: !If [IsProduction, 30, 7]
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Logs
 
 Outputs:
   VPCID:
@@ -429,4 +700,21 @@ Outputs:
 
   S3BucketName:
     Description: S3 Bucket for file attachments
-    Value: !Ref TaskTrackBucket 
+    Value: !Ref TaskTrackBucket
+    
+  CloudFrontURL:
+    Description: CloudFront Distribution URL (if enabled)
+    Condition: CreateCloudFrontDistribution
+    Value: !Join ["", ["https://", !GetAtt CloudFrontDistribution.DomainName]]
+    
+  DeployEnvironment:
+    Description: Current deployment environment
+    Value: !Ref Environment
+    
+  DBConnectionString:
+    Description: Database connection string (without password)
+    Value: !Sub "postgres://${DBUsername}@${TaskTrackDatabase.Endpoint.Address}:5432/tasktrack"
+    
+  AutoScalingGroupName:
+    Description: Auto Scaling Group name for backend instances
+    Value: !Ref BackendAutoScalingGroup 
