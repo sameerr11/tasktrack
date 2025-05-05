@@ -23,4 +23,3 @@
 
 ## AWS Resources Used
 - EC2, S3, RDS, IAM, VPC, Elastic Beanstalk
-
