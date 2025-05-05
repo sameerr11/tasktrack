@@ -1,18 +1,14 @@
 import React from 'react';
 import { Spinner } from 'react-bootstrap';
 
-const Loader = () => {
+const Loader = ({ size = 'md' }) => {
   return (
-    <div className="d-flex justify-content-center my-5">
+    <div className="d-flex justify-content-center my-4">
       <Spinner
         animation="border"
         role="status"
-        style={{
-          width: '50px',
-          height: '50px',
-          margin: 'auto',
-          display: 'block',
-        }}
+        variant="primary"
+        size={size}
       >
         <span className="visually-hidden">Loading...</span>
       </Spinner>
