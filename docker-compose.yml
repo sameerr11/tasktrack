@@ -1,0 +1,65 @@
+version: '3'
+
+services:
+  # MongoDB service
+  mongo:
+    image: mongo:4.4
+    container_name: tasktrack-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=tasktrack
+    networks:
+      - tasktrack-network
+
+  # Backend API service
+  backend:
+    build: ./backend
+    container_name: tasktrack-backend
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongo:27017/tasktrack
+      - JWT_SECRET=your_jwt_secret_dev_only
+      - AWS_ACCESS_KEY_ID=your_aws_access_key_id
+      - AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+      - AWS_REGION=us-east-1
+      - AWS_S3_BUCKET_NAME=your-tasktrack-bucket
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - tasktrack-network
+
+  # Frontend service
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: tasktrack-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - tasktrack-network
+
+networks:
+  tasktrack-network:
+    driver: bridge
+
+volumes:
+  mongo-data: 

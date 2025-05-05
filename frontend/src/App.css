@@ -1,0 +1,86 @@
+/* Base styles */
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #f8f9fa;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1;
+}
+
+/* Card styles */
+.card {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+}
+
+/* Status colors */
+.status-pending {
+  border-left: 4px solid #ffc107;
+}
+
+.status-in-progress {
+  border-left: 4px solid #0d6efd;
+}
+
+.status-completed {
+  border-left: 4px solid #198754;
+}
+
+/* Priority colors */
+.priority-high {
+  color: #dc3545;
+}
+
+.priority-medium {
+  color: #fd7e14;
+}
+
+.priority-low {
+  color: #20c997;
+}
+
+/* File upload styles */
+.file-drop-zone {
+  border: 2px dashed #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.file-drop-zone:hover, .file-drop-zone.active {
+  border-color: #6c757d;
+  background-color: rgba(108, 117, 125, 0.05);
+}
+
+/* Form styles */
+.form-label {
+  font-weight: 500;
+}
+
+/* Footer styles */
+footer {
+  margin-top: auto;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .container {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+} 
