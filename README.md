@@ -9,14 +9,14 @@ TaskTrack is a full-stack cloud-native task management application deployed on A
 - Upload task attachments (stored in S3)
 - Responsive React frontend
 - RESTful API with Node.js/Express backend
-- MongoDB database (hosted on AWS RDS or MongoDB Atlas)
+- PostgreSQL/MySQL database hosted on AWS RDS
 - Fully containerized application with Docker
 
 ## AWS Cloud Architecture
 The application is deployed using the following AWS services:
 - **EC2**: For hosting the backend API in Docker containers
 - **Elastic Beanstalk**: For hosting the React frontend
-- **RDS (or MongoDB Atlas)**: For the database
+- **RDS**: For PostgreSQL/MySQL database
 - **S3**: For storing file attachments
 - **IAM**: For managing access permissions
 - **VPC**: For network isolation and security
@@ -27,7 +27,7 @@ The application is deployed using the following AWS services:
 - Node.js (v14+)
 - Docker and Docker Compose
 - AWS account with appropriate permissions
-- MongoDB (if running without Docker)
+- PostgreSQL or MySQL (if running without Docker)
 
 ### Environment Setup
 1. Clone the repository
@@ -40,8 +40,19 @@ The application is deployed using the following AWS services:
    ```
    # In backend/.env
    PORT=5000
-   MONGODB_URI=mongodb://localhost:27017/tasktrack
+   NODE_ENV=development
    JWT_SECRET=your_jwt_secret_here
+   
+   # Database Configuration (PostgreSQL or MySQL)
+   DB_DIALECT=postgres
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_NAME=tasktrack
+   DB_USER=postgres
+   DB_PASSWORD=your_database_password
+   DB_RESET=false
+   
+   # AWS Configuration
    AWS_ACCESS_KEY_ID=your_aws_access_key
    AWS_SECRET_ACCESS_KEY=your_aws_secret_key
    AWS_REGION=us-east-1
@@ -55,15 +66,14 @@ The application is deployed using the following AWS services:
 ```
 docker-compose up
 ```
-This will start MongoDB, backend, and frontend services. The app will be available at:
+This will start PostgreSQL, backend, and frontend services. The app will be available at:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:5000
 
 ### Running Without Docker
-1. Start MongoDB
-   ```
-   mongod
-   ```
+1. Start PostgreSQL/MySQL Database
+   - Make sure your database server is running
+   - Create a new database named 'tasktrack'
 
 2. Start Backend
    ```
@@ -81,50 +91,166 @@ This will start MongoDB, backend, and frontend services. The app will be availab
 
 ## AWS Deployment Guide
 
-### Backend Deployment to EC2
-1. Launch an EC2 instance (t2.micro or larger)
-2. Install Docker on the EC2 instance
-3. Clone the repository on the instance
-4. Set up environment variables
-5. Build and run the Docker container
+### VPC Setup
+1. Create a VPC with public and private subnets
+   - Public subnet for load balancers
+   - Private subnet for EC2 and RDS
+   - NAT Gateway for outbound traffic from private subnet
+
+2. Configure Security Groups
+   - Backend SG: Allow inbound traffic on port 5000 from LB SG
+   - RDS SG: Allow inbound traffic on DB port from Backend SG
+   - LB SG: Allow inbound traffic on port 80/443 from internet
+
+### Database Setup (RDS)
+1. Create a PostgreSQL/MySQL RDS instance
    ```
-   docker build -t tasktrack-backend ./backend
-   docker run -d -p 80:5000 --env-file ./backend/.env --name tasktrack-api tasktrack-backend
+   aws rds create-db-instance \
+     --db-instance-identifier tasktrack-db \
+     --db-instance-class db.t3.micro \
+     --engine postgres \
+     --master-username postgres \
+     --master-user-password secret_password \
+     --allocated-storage 20 \
+     --vpc-security-group-ids sg-xxxxxxxxxx \
+     --db-subnet-group-name my-db-subnet-group
    ```
 
-### Database Setup
-1. Create a MongoDB database using RDS or MongoDB Atlas
-2. Configure security groups to allow access from your EC2 instance
-3. Update the `MONGODB_URI` in your backend environment variables
+2. Configure the database
+   - Create 'tasktrack' database
+   - The application will automatically create tables on first run
 
 ### S3 Bucket for Attachments
-1. Create an S3 bucket for storing task attachments
-2. Configure CORS to allow uploads from your frontend domain
-3. Set up IAM permissions for your EC2 instance to access the bucket
+1. Create an S3 bucket
+   ```
+   aws s3api create-bucket \
+     --bucket your-tasktrack-bucket \
+     --region us-east-1
+   ```
+
+2. Configure bucket policy for private access
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "AllowAppAccess",
+         "Effect": "Allow",
+         "Principal": {
+           "AWS": "arn:aws:iam::YOUR_ACCOUNT_ID:role/EC2-TaskTrack-Role"
+         },
+         "Action": [
+           "s3:PutObject",
+           "s3:GetObject",
+           "s3:DeleteObject"
+         ],
+         "Resource": "arn:aws:s3:::your-tasktrack-bucket/*"
+       }
+     ]
+   }
+   ```
+
+3. Configure CORS
+   ```json
+   [
+     {
+       "AllowedHeaders": ["*"],
+       "AllowedMethods": ["GET", "PUT", "POST", "DELETE"],
+       "AllowedOrigins": ["https://tasktrack-client.elasticbeanstalk.com"],
+       "ExposeHeaders": []
+     }
+   ]
+   ```
+
+### Backend Deployment to EC2
+1. Create IAM role for EC2 with policies:
+   - AmazonS3ReadWrite (for file storage)
+   - AmazonRDSReadWrite (for database access)
+
+2. Launch an EC2 instance in private subnet
+   - Use Amazon Linux 2 AMI
+   - Assign IAM role created above
+   - Configure security group
+
+3. Install Docker on the EC2 instance
+   ```
+   ssh ec2-user@your-instance-ip
+   sudo yum update -y
+   sudo amazon-linux-extras install docker
+   sudo service docker start
+   sudo usermod -a -G docker ec2-user
+   ```
+
+4. Deploy the application
+   ```
+   git clone https://github.com/your-username/tasktrack.git
+   cd tasktrack/backend
+   
+   # Create .env file with RDS & S3 settings
+   echo "DB_HOST=your-rds-endpoint.rds.amazonaws.com" >> .env
+   echo "DB_USER=postgres" >> .env
+   echo "DB_PASSWORD=your-password" >> .env
+   # Add other env variables...
+   
+   # Build and run the Docker container
+   docker build -t tasktrack-backend .
+   docker run -d -p 5000:5000 --env-file .env --name tasktrack-api tasktrack-backend
+   ```
 
 ### Frontend Deployment to Elastic Beanstalk
 1. Install the AWS EB CLI
-2. Create a new Elastic Beanstalk application
+   ```
+   pip install awsebcli
+   ```
+
+2. Configure and deploy
    ```
    cd frontend
-   eb init
-   eb create tasktrack-frontend
-   ```
-3. Configure environment variables for the frontend
-4. Deploy the application
-   ```
+   
+   # Create .env.production
+   echo "REACT_APP_API_URL=http://your-load-balancer-url" > .env.production
+   
+   # Build the app
    npm run build
+   
+   # Initialize EB
+   eb init --platform docker
+   
+   # Create the environment
+   eb create tasktrack-frontend --elb-type application
+   
+   # Deploy
    eb deploy
    ```
+
+### Security Considerations
+1. IAM Roles - Use least privilege principle
+   - EC2 roles for S3 and RDS access
+   - Service roles for Elastic Beanstalk
+
+2. Security Groups
+   - Only open necessary ports
+   - Use security group references to restrict access
+
+3. HTTPS
+   - Create ACM certificate
+   - Configure ALB to use HTTPS
+   - Redirect HTTP to HTTPS
+
+4. Database Security
+   - Use strong password policies
+   - Enable encryption at rest
+   - Schedule regular backups
 
 ## Project Structure
 ```
 tasktrack/
 │
 ├── backend/              # Node.js API
+│   ├── config/           # Database configuration
 │   ├── controllers/      # Route controllers
 │   ├── middleware/       # Custom middleware
-│   ├── models/           # Mongoose models
+│   ├── models/           # Sequelize models
 │   ├── routes/           # API routes
 │   ├── utils/            # Utility functions
 │   ├── .env              # Environment variables
@@ -150,9 +276,10 @@ tasktrack/
 
 ## Technologies Used
 - **Frontend**: React, React Bootstrap, React Router, Axios
-- **Backend**: Node.js, Express, MongoDB, Mongoose, JWT
-- **Cloud**: AWS (EC2, S3, RDS, Elastic Beanstalk)
-- **DevOps**: Docker, Docker Compose, GitHub Actions (CI/CD)
+- **Backend**: Node.js, Express, Sequelize ORM, JWT
+- **Database**: PostgreSQL/MySQL on RDS
+- **Cloud**: AWS (EC2, S3, RDS, Elastic Beanstalk, VPC, IAM)
+- **DevOps**: Docker, Docker Compose
 
 ## License
 MIT

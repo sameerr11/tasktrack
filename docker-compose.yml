@@ -1,16 +1,18 @@
 version: '3'
 
 services:
-  # MongoDB service
-  mongo:
-    image: mongo:4.4
-    container_name: tasktrack-mongo
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14
+    container_name: tasktrack-postgres
     ports:
-      - "27017:27017"
+      - "5432:5432"
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
     environment:
-      - MONGO_INITDB_DATABASE=tasktrack
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=tasktrack
     networks:
       - tasktrack-network
 
@@ -22,11 +24,17 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - mongo
+      - postgres
     environment:
       - NODE_ENV=development
       - PORT=5000
-      - MONGODB_URI=mongodb://mongo:27017/tasktrack
+      - DB_DIALECT=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=tasktrack
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_RESET=true
       - JWT_SECRET=your_jwt_secret_dev_only
       - AWS_ACCESS_KEY_ID=your_aws_access_key_id
       - AWS_SECRET_ACCESS_KEY=your_aws_secret_key
@@ -62,4 +70,4 @@ networks:
     driver: bridge
 
 volumes:
-  mongo-data: 
+  postgres-data: 

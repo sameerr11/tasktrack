@@ -16,7 +16,7 @@ const registerUser = async (req, res) => {
     const { name, email, password } = req.body;
 
     // Check if user already exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ where: { email } });
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -30,11 +30,11 @@ const registerUser = async (req, res) => {
 
     // Return user data and token
     res.status(201).json({
-      _id: user._id,
+      id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
-      token: generateToken(user._id)
+      token: generateToken(user.id)
     });
   } catch (error) {
     console.error('Register error:', error.message);
@@ -50,7 +50,7 @@ const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     // Find user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -63,11 +63,11 @@ const loginUser = async (req, res) => {
 
     // Return user data and token
     res.json({
-      _id: user._id,
+      id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
-      token: generateToken(user._id)
+      token: generateToken(user.id)
     });
   } catch (error) {
     console.error('Login error:', error.message);
@@ -80,10 +80,15 @@ const loginUser = async (req, res) => {
 // @access  Private
 const getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
+    // req.user already loaded in auth middleware
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['password'] }
+    });
+    
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+    
     res.json(user);
   } catch (error) {
     console.error('Get profile error:', error.message);

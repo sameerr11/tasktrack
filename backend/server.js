@@ -1,10 +1,10 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const path = require('path');
+const { testConnection, syncDatabase } = require('./config/db');
 
-// Import routes later
+// Import routes
 const userRoutes = require('./routes/users');
 const taskRoutes = require('./routes/tasks');
 
@@ -24,23 +24,25 @@ app.get('/', (req, res) => {
   res.json({ message: 'Welcome to TaskTrack API' });
 });
 
-// Connect to MongoDB
-const connectDB = async () => {
+// Initialize database
+const initializeDatabase = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+    // Test database connection
+    await testConnection();
+    
+    // Sync models with database (set force to true only in development to drop tables)
+    const force = process.env.NODE_ENV === 'development' && process.env.DB_RESET === 'true';
+    await syncDatabase(force);
+    
+    // Start the server
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
     });
-    console.log('MongoDB connected');
   } catch (err) {
-    console.error('MongoDB connection error:', err.message);
+    console.error('Failed to initialize database:', err);
     process.exit(1);
   }
 };
 
-connectDB();
-
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-}); 
+// Start the application
+initializeDatabase(); 

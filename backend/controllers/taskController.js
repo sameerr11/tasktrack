@@ -1,6 +1,8 @@
-const Task = require('../models/Task');
+const { Task, Attachment } = require('../models/Task');
+const User = require('../models/User');
 const AWS = require('aws-sdk');
 const { v4: uuidv4 } = require('uuid');
+const { Op } = require('sequelize');
 
 // Configure AWS S3
 const s3 = new AWS.S3({
@@ -22,15 +24,18 @@ const createTask = async (req, res) => {
       description,
       status,
       priority,
-      dueDate: dueDate ? new Date(dueDate) : undefined,
-      assignedTo,
-      createdBy: req.user._id
+      dueDate: dueDate ? new Date(dueDate) : null,
+      assignedToId: assignedTo || null,
+      createdById: req.user.id
     });
 
-    // Fetch the created task with populated fields
-    const populatedTask = await Task.findById(task._id)
-      .populate('assignedTo', 'name email')
-      .populate('createdBy', 'name email');
+    // Fetch the created task with associations
+    const populatedTask = await Task.findByPk(task.id, {
+      include: [
+        { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
+        { model: User, as: 'createdBy', attributes: ['id', 'name', 'email'] }
+      ]
+    });
 
     res.status(201).json(populatedTask);
   } catch (error) {
@@ -46,10 +51,14 @@ const getTasks = async (req, res) => {
   try {
     // Filter options
     const filter = {};
+    const include = [
+      { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
+      { model: User, as: 'createdBy', attributes: ['id', 'name', 'email'] }
+    ];
     
     // Add filter for assigned user if provided
     if (req.query.assignedTo) {
-      filter.assignedTo = req.query.assignedTo;
+      filter.assignedToId = req.query.assignedTo;
     }
     
     // Add filter for status if provided
@@ -64,31 +73,30 @@ const getTasks = async (req, res) => {
 
     // Regular users can only see tasks created by or assigned to them
     if (req.user.role !== 'admin') {
-      filter.$or = [
-        { createdBy: req.user._id },
-        { assignedTo: req.user._id }
+      filter[Op.or] = [
+        { createdById: req.user.id },
+        { assignedToId: req.user.id }
       ];
     }
 
     // Get tasks with pagination
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    const tasks = await Task.find(filter)
-      .populate('assignedTo', 'name email')
-      .populate('createdBy', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const total = await Task.countDocuments(filter);
+    const { count, rows: tasks } = await Task.findAndCountAll({
+      where: filter,
+      include: include,
+      order: [['createdAt', 'DESC']],
+      offset,
+      limit
+    });
 
     res.json({
       tasks,
       page,
-      pages: Math.ceil(total / limit),
-      total
+      pages: Math.ceil(count / limit),
+      total: count
     });
   } catch (error) {
     console.error('Get tasks error:', error.message);
@@ -101,9 +109,13 @@ const getTasks = async (req, res) => {
 // @access  Private
 const getTaskById = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id)
-      .populate('assignedTo', 'name email')
-      .populate('createdBy', 'name email');
+    const task = await Task.findByPk(req.params.id, {
+      include: [
+        { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
+        { model: User, as: 'createdBy', attributes: ['id', 'name', 'email'] },
+        { model: Attachment }
+      ]
+    });
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -112,8 +124,8 @@ const getTaskById = async (req, res) => {
     // Check if user has access to this task
     if (
       req.user.role !== 'admin' &&
-      task.createdBy._id.toString() !== req.user._id.toString() &&
-      (!task.assignedTo || task.assignedTo._id.toString() !== req.user._id.toString())
+      task.createdById !== req.user.id &&
+      (!task.assignedToId || task.assignedToId !== req.user.id)
     ) {
       return res.status(403).json({ message: 'Not authorized to access this task' });
     }
@@ -132,14 +144,14 @@ const updateTask = async (req, res) => {
   try {
     const { title, description, status, priority, dueDate, assignedTo } = req.body;
 
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id);
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Check if user has permission to update
-    if (req.user.role !== 'admin' && task.createdBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && task.createdById !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized to update this task' });
     }
 
@@ -149,16 +161,19 @@ const updateTask = async (req, res) => {
     task.status = status || task.status;
     task.priority = priority || task.priority;
     task.dueDate = dueDate ? new Date(dueDate) : task.dueDate;
-    task.assignedTo = assignedTo || task.assignedTo;
+    task.assignedToId = assignedTo || task.assignedToId;
 
-    const updatedTask = await task.save();
+    await task.save();
 
-    // Fetch the updated task with populated fields
-    const populatedTask = await Task.findById(updatedTask._id)
-      .populate('assignedTo', 'name email')
-      .populate('createdBy', 'name email');
+    // Fetch the updated task with associations
+    const updatedTask = await Task.findByPk(task.id, {
+      include: [
+        { model: User, as: 'assignedTo', attributes: ['id', 'name', 'email'] },
+        { model: User, as: 'createdBy', attributes: ['id', 'name', 'email'] }
+      ]
+    });
 
-    res.json(populatedTask);
+    res.json(updatedTask);
   } catch (error) {
     console.error('Update task error:', error.message);
     res.status(500).json({ message: 'Server error' });
@@ -170,20 +185,22 @@ const updateTask = async (req, res) => {
 // @access  Private
 const deleteTask = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id, {
+      include: [{ model: Attachment }]
+    });
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Check if user has permission to delete
-    if (req.user.role !== 'admin' && task.createdBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && task.createdById !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized to delete this task' });
     }
 
     // Delete attachments from S3 if they exist
-    if (task.attachments && task.attachments.length > 0) {
-      const deletePromises = task.attachments.map(attachment => {
+    if (task.Attachments && task.Attachments.length > 0) {
+      const deletePromises = task.Attachments.map(attachment => {
         const params = {
           Bucket: process.env.AWS_S3_BUCKET_NAME,
           Key: attachment.s3Key
@@ -194,7 +211,7 @@ const deleteTask = async (req, res) => {
       await Promise.all(deletePromises);
     }
 
-    await task.remove();
+    await task.destroy();
 
     res.json({ message: 'Task removed' });
   } catch (error) {
@@ -208,7 +225,7 @@ const deleteTask = async (req, res) => {
 // @access  Private
 const uploadAttachment = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id);
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -216,8 +233,8 @@ const uploadAttachment = async (req, res) => {
 
     // Check if user has permission
     if (req.user.role !== 'admin' && 
-        task.createdBy.toString() !== req.user._id.toString() &&
-        (!task.assignedTo || task.assignedTo.toString() !== req.user._id.toString())) {
+        task.createdById !== req.user.id &&
+        (!task.assignedToId || task.assignedToId !== req.user.id)) {
       return res.status(403).json({ message: 'Not authorized to update this task' });
     }
 
@@ -240,15 +257,13 @@ const uploadAttachment = async (req, res) => {
     const s3Response = await s3.upload(params).promise();
 
     // Add attachment to task
-    const attachment = {
+    const attachment = await Attachment.create({
       fileName: req.file.originalname,
       fileUrl: s3Response.Location,
       fileType: req.file.mimetype,
-      s3Key: fileKey
-    };
-
-    task.attachments.push(attachment);
-    await task.save();
+      s3Key: fileKey,
+      TaskId: task.id
+    });
 
     res.status(201).json({
       message: 'Attachment uploaded successfully',
@@ -265,27 +280,28 @@ const uploadAttachment = async (req, res) => {
 // @access  Private
 const deleteAttachment = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id);
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Check if user has permission
-    if (req.user.role !== 'admin' && task.createdBy.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && task.createdById !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized to delete attachments' });
     }
 
     // Find attachment
-    const attachmentIndex = task.attachments.findIndex(
-      a => a._id.toString() === req.params.attachmentId
-    );
+    const attachment = await Attachment.findOne({
+      where: {
+        id: req.params.attachmentId,
+        TaskId: task.id
+      }
+    });
 
-    if (attachmentIndex === -1) {
+    if (!attachment) {
       return res.status(404).json({ message: 'Attachment not found' });
     }
-
-    const attachment = task.attachments[attachmentIndex];
 
     // Delete from S3
     const params = {
@@ -295,9 +311,8 @@ const deleteAttachment = async (req, res) => {
 
     await s3.deleteObject(params).promise();
 
-    // Remove from task
-    task.attachments.splice(attachmentIndex, 1);
-    await task.save();
+    // Remove from database
+    await attachment.destroy();
 
     res.json({ message: 'Attachment deleted' });
   } catch (error) {

@@ -1,59 +1,62 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/db');
+const User = require('./User');
 
-const taskSchema = new mongoose.Schema({
+// Define Task model with Sequelize
+const Task = sequelize.define('Task', {
   title: {
-    type: String,
-    required: true,
-    trim: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      notEmpty: true
+    }
   },
   description: {
-    type: String,
-    trim: true
+    type: DataTypes.TEXT,
+    allowNull: true
   },
   status: {
-    type: String,
-    enum: ['pending', 'in-progress', 'completed'],
-    default: 'pending'
+    type: DataTypes.ENUM('pending', 'in-progress', 'completed'),
+    defaultValue: 'pending'
   },
   priority: {
-    type: String,
-    enum: ['low', 'medium', 'high'],
-    default: 'medium'
+    type: DataTypes.ENUM('low', 'medium', 'high'),
+    defaultValue: 'medium'
   },
   dueDate: {
-    type: Date
-  },
-  attachments: [{
-    fileName: String,
-    fileUrl: String,
-    fileType: String,
-    s3Key: String
-  }],
-  assignedTo: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: true
   }
+}, {
+  timestamps: true
 });
 
-// Update the updatedAt timestamp before each save
-taskSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+// Define Attachment model for task attachments
+const Attachment = sequelize.define('Attachment', {
+  fileName: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  fileUrl: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  fileType: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  s3Key: {
+    type: DataTypes.STRING,
+    allowNull: false
+  }
+}, {
+  timestamps: true
 });
 
-const Task = mongoose.model('Task', taskSchema);
+// Define relationships
+Task.belongsTo(User, { as: 'createdBy', foreignKey: { allowNull: false } });
+Task.belongsTo(User, { as: 'assignedTo', foreignKey: { allowNull: true } });
+Task.hasMany(Attachment, { onDelete: 'CASCADE' });
+Attachment.belongsTo(Task);
 
-module.exports = Task; 
+module.exports = { Task, Attachment }; 

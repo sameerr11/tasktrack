@@ -1,0 +1,432 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for TaskTrack application infrastructure'
+
+Parameters:
+  VpcCIDR:
+    Description: CIDR block for the VPC
+    Type: String
+    Default: 10.0.0.0/16
+  
+  PublicSubnet1CIDR:
+    Description: CIDR block for the public subnet in AZ 1
+    Type: String
+    Default: 10.0.1.0/24
+  
+  PublicSubnet2CIDR:
+    Description: CIDR block for the public subnet in AZ 2
+    Type: String
+    Default: 10.0.2.0/24
+  
+  PrivateSubnet1CIDR:
+    Description: CIDR block for the private subnet in AZ 1
+    Type: String
+    Default: 10.0.3.0/24
+  
+  PrivateSubnet2CIDR:
+    Description: CIDR block for the private subnet in AZ 2
+    Type: String
+    Default: 10.0.4.0/24
+  
+  DBUsername:
+    Description: Username for RDS database
+    Type: String
+    Default: postgres
+  
+  DBPassword:
+    Description: Password for RDS database
+    Type: String
+    NoEcho: true
+  
+  EC2InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+
+  S3BucketName:
+    Description: Name for the S3 bucket
+    Type: String
+    Default: tasktrack-attachments
+
+Resources:
+  # VPC and Networking
+  TaskTrackVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: TaskTrack-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: TaskTrack-IGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref TaskTrackVPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TaskTrackVPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Public-Subnet-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TaskTrackVPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Public-Subnet-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TaskTrackVPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Private-Subnet-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TaskTrackVPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Private-Subnet-2
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TaskTrackVPC
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Public-Routes
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: TaskTrack-NAT-Gateway-1
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TaskTrackVPC
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Private-Routes
+
+  DefaultPrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+  # Security Groups
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for backend EC2 instances
+      VpcId: !Ref TaskTrackVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Backend-SG
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS instance
+      VpcId: !Ref TaskTrackVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: TaskTrack-RDS-SG
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref TaskTrackVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: TaskTrack-ALB-SG
+
+  # RDS Database
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: TaskTrack-DB-Subnet-Group
+
+  TaskTrackDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: tasktrack
+      Engine: postgres
+      EngineVersion: 14.3
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !GetAtt RDSSecurityGroup.GroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Database
+
+  # S3 Bucket
+  TaskTrackBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+      Tags:
+        - Key: Name
+          Value: TaskTrack-S3-Bucket
+
+  # IAM Role for EC2
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Path: /
+      Tags:
+        - Key: Name
+          Value: TaskTrack-EC2-Role
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2Role
+
+  # EC2 Instance for Backend
+  BackendInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      ImageId: ami-0c55b159cbfafe1f0
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !GetAtt BackendSecurityGroup.GroupId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum update -y
+          amazon-linux-extras install docker -y
+          service docker start
+          usermod -a -G docker ec2-user
+          
+          # Install Git and clone repository
+          yum install -y git
+          git clone https://github.com/your-username/tasktrack.git /home/ec2-user/tasktrack
+          
+          # Configure environment variables
+          cat > /home/ec2-user/tasktrack/backend/.env << EOL
+          PORT=5000
+          NODE_ENV=production
+          
+          DB_DIALECT=postgres
+          DB_HOST=${TaskTrackDatabase.Endpoint.Address}
+          DB_PORT=5432
+          DB_NAME=tasktrack
+          DB_USER=${DBUsername}
+          DB_PASSWORD=${DBPassword}
+          
+          JWT_SECRET=your_secret_key
+          
+          AWS_REGION=${AWS::Region}
+          AWS_S3_BUCKET_NAME=${TaskTrackBucket}
+          EOL
+          
+          # Build and run Docker container
+          cd /home/ec2-user/tasktrack/backend
+          docker build -t tasktrack-backend .
+          docker run -d -p 5000:5000 --env-file .env --name tasktrack-api tasktrack-backend
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Backend
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !GetAtt LoadBalancerSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: TaskTrack-ALB
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 5000
+      Protocol: HTTP
+      TargetType: instance
+      Targets:
+        - Id: !Ref BackendInstance
+          Port: 5000
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref TaskTrackVPC
+      Tags:
+        - Key: Name
+          Value: TaskTrack-Target-Group
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  VPCID:
+    Description: VPC ID
+    Value: !Ref TaskTrackVPC
+
+  PublicSubnets:
+    Description: Public subnets
+    Value: !Join [",", [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+
+  PrivateSubnets:
+    Description: Private subnets
+    Value: !Join [",", [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+
+  RDSEndpoint:
+    Description: RDS connection endpoint
+    Value: !GetAtt TaskTrackDatabase.Endpoint.Address
+
+  BackendURL:
+    Description: URL of the Backend API
+    Value: !Join ["", ["http://", !GetAtt ApplicationLoadBalancer.DNSName]]
+
+  S3BucketName:
+    Description: S3 Bucket for file attachments
+    Value: !Ref TaskTrackBucket 
