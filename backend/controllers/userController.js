@@ -96,8 +96,48 @@ const getUserProfile = async (req, res) => {
   }
 };
 
+// @desc    Update user profile
+// @route   PUT /api/users/profile
+// @access  Private
+const updateUserProfile = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    
+    // Get user from database
+    const user = await User.findByPk(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    // Update fields
+    user.name = name || user.name;
+    user.email = email || user.email;
+    
+    // Only update password if provided
+    if (password) {
+      user.password = password;
+      // The password will be hashed in the User model beforeUpdate hook
+    }
+    
+    await user.save();
+    
+    // Return updated user data
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    });
+  } catch (error) {
+    console.error('Update profile error:', error.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
-  getUserProfile
+  getUserProfile,
+  updateUserProfile
 }; 

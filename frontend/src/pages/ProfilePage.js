@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
-import axios from 'axios';
 import Loader from '../components/Loader';
+import { userAPI } from '../utils/api';
 
 const ProfilePage = () => {
   const [name, setName] = useState('');
@@ -15,22 +15,17 @@ const ProfilePage = () => {
   
   // Get user info from local storage
   const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-  const config = {
-    headers: {
-      Authorization: `Bearer ${userInfo.token}`
-    }
-  };
   
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         setLoading(true);
-        const { data } = await axios.get('/api/users/profile', config);
+        const data = await userAPI.getProfile();
         
         setName(data.name);
         setEmail(data.email);
       } catch (err) {
-        setError(err.response?.data?.message || 'Error fetching profile');
+        setError(err.message || 'Error fetching profile');
       } finally {
         setLoading(false);
       }
@@ -53,27 +48,28 @@ const ProfilePage = () => {
       setError('');
       setSuccess('');
       
-      const { data } = await axios.put(
-        '/api/users/profile',
-        { name, email, password: password || undefined },
-        config
-      );
+      const userData = {
+        name,
+        email,
+        password: password || undefined
+      };
+      
+      const data = await userAPI.updateProfile(userData);
       
       // Update localStorage
-      localStorage.setItem(
-        'userInfo',
-        JSON.stringify({
-          ...userInfo,
-          name: data.name,
-          email: data.email
-        })
-      );
+      const updatedUserInfo = {
+        ...userInfo,
+        name: data.name,
+        email: data.email
+      };
+      
+      localStorage.setItem('userInfo', JSON.stringify(updatedUserInfo));
       
       setSuccess('Profile updated successfully');
       setPassword('');
       setConfirmPassword('');
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update profile');
+      setError(err.message || 'Failed to update profile');
     } finally {
       setUpdateLoading(false);
     }

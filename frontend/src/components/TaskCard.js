@@ -75,13 +75,13 @@ const TaskCard = ({ task }) => {
         </div>
         
         <div className="d-flex justify-content-end">
-          <LinkContainer to={`/tasks/${task._id}`}>
+          <LinkContainer to={`/tasks/${task.id}`}>
             <Button variant="outline-primary" size="sm" className="me-2">
               View Details
             </Button>
           </LinkContainer>
           
-          <LinkContainer to={`/tasks/${task._id}/edit`}>
+          <LinkContainer to={`/tasks/${task.id}/edit`}>
             <Button variant="outline-secondary" size="sm">
               Edit
             </Button>

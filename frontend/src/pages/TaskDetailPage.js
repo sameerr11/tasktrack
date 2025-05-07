@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Badge, Button, ListGroup, Alert } from 'react-bootstrap';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { FaEdit, FaTrash, FaArrowLeft } from 'react-icons/fa';
-import axios from 'axios';
 import Loader from '../components/Loader';
+import { taskAPI } from '../utils/api';
 
 const TaskDetailPage = () => {
   const [task, setTask] = useState(null);
@@ -12,22 +12,14 @@ const TaskDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   
-  // Get auth token
-  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-  const config = {
-    headers: {
-      Authorization: `Bearer ${userInfo.token}`
-    }
-  };
-  
   useEffect(() => {
     const fetchTask = async () => {
       try {
         setLoading(true);
-        const { data } = await axios.get(`/api/tasks/${id}`, config);
+        const data = await taskAPI.getTaskById(id);
         setTask(data);
       } catch (err) {
-        setError(err.response?.data?.message || 'Error fetching task details');
+        setError(err.message || 'Error fetching task details');
       } finally {
         setLoading(false);
       }
@@ -40,10 +32,10 @@ const TaskDetailPage = () => {
     if (window.confirm('Are you sure you want to delete this task?')) {
       try {
         setLoading(true);
-        await axios.delete(`/api/tasks/${id}`, config);
+        await taskAPI.deleteTask(id);
         navigate('/tasks');
       } catch (err) {
-        setError(err.response?.data?.message || 'Error deleting task');
+        setError(err.message || 'Error deleting task');
         setLoading(false);
       }
     }

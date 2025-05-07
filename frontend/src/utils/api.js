@@ -153,5 +153,19 @@ export const userAPI = {
     } catch (error) {
       throw new Error(error.response?.data?.message || 'Error fetching profile');
     }
+  },
+
+  // Update user profile
+  updateProfile: async (userData) => {
+    try {
+      const response = await axios.put(
+        `${API_URL}/api/users/profile`, 
+        userData, 
+        getAuthHeader()
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(error.response?.data?.message || 'Error updating profile');
+    }
   }
 }; 

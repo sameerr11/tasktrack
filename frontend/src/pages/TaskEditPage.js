@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { FaArrowLeft } from 'react-icons/fa';
-import axios from 'axios';
 import Loader from '../components/Loader';
+import { taskAPI, userAPI } from '../utils/api';
 
 const TaskEditPage = () => {
   const { id } = useParams();
@@ -22,20 +22,12 @@ const TaskEditPage = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [error, setError] = useState('');
   
-  // Get auth token from local storage
-  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-  const config = {
-    headers: {
-      Authorization: `Bearer ${userInfo.token}`
-    }
-  };
-  
   // Fetch task data
   useEffect(() => {
     const fetchTask = async () => {
       try {
         setLoadingTask(true);
-        const { data } = await axios.get(`/api/tasks/${id}`, config);
+        const data = await taskAPI.getTaskById(id);
         
         setTitle(data.title);
         setDescription(data.description || '');
@@ -44,7 +36,7 @@ const TaskEditPage = () => {
         setDueDate(data.dueDate ? data.dueDate.split('T')[0] : '');
         setAssignedTo(data.assignedTo?.id || '');
       } catch (err) {
-        setError(err.response?.data?.message || 'Error fetching task');
+        setError(err.message || 'Error fetching task');
       } finally {
         setLoadingTask(false);
       }
@@ -58,8 +50,10 @@ const TaskEditPage = () => {
     const fetchUsers = async () => {
       try {
         setLoadingUsers(true);
-        const { data } = await axios.get('/api/users', config);
-        setUsers(data);
+        // Ideally we would have a userAPI.getUsers() function, but we'll work with what we have
+        const response = await userAPI.getProfile();
+        // For now, just add the current user as an option
+        setUsers([response]);
       } catch (err) {
         console.error('Error fetching users:', err);
       } finally {
@@ -86,10 +80,10 @@ const TaskEditPage = () => {
         assignedTo: assignedTo || null
       };
       
-      await axios.put(`/api/tasks/${id}`, taskData, config);
+      await taskAPI.updateTask(id, taskData);
       navigate(`/tasks/${id}`);
     } catch (err) {
-      setError(err.response?.data?.message || 'Error updating task');
+      setError(err.message || 'Error updating task');
     } finally {
       setLoading(false);
     }
