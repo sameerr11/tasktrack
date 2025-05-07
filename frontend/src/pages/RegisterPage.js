@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { userAPI } from '../utils/api';
 
 const RegisterPage = () => {
   const [name, setName] = useState('');
@@ -26,19 +26,16 @@ const RegisterPage = () => {
       setLoading(true);
       setError('');
       
-      const response = await axios.post('/api/users/register', {
-        name,
-        email,
-        password
-      });
+      const response = await userAPI.register(name, email, password);
       
       // Store user info in localStorage
-      localStorage.setItem('userInfo', JSON.stringify(response.data));
+      localStorage.setItem('userInfo', JSON.stringify(response));
+      localStorage.setItem('token', response.token);
       
       // Redirect to dashboard
       navigate('/tasks');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      setError(err.message || 'Registration failed');
     } finally {
       setLoading(false);
     }

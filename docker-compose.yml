@@ -34,7 +34,7 @@ services:
       - DB_NAME=tasktrack
       - DB_USER=postgres
       - DB_PASSWORD=postgres
-      - DB_RESET=true
+      - DB_RESET=false
       - JWT_SECRET=your_jwt_secret_dev_only
       - AWS_ACCESS_KEY_ID=your_aws_access_key_id
       - AWS_SECRET_ACCESS_KEY=your_aws_secret_key

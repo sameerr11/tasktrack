@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navbar, Nav, Container, NavDropdown } from 'react-bootstrap';
 import { LinkContainer } from 'react-router-bootstrap';
 import { useNavigate } from 'react-router-dom';
@@ -8,9 +8,27 @@ import { useAuth } from '../context/AuthContext';
 const Header = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [userData, setUserData] = useState(null);
+  
+  // Check both context and localStorage
+  useEffect(() => {
+    if (user) {
+      setUserData(user);
+    } else {
+      const storedUser = localStorage.getItem('userInfo');
+      if (storedUser) {
+        try {
+          setUserData(JSON.parse(storedUser));
+        } catch (err) {
+          console.error('Error parsing user data');
+        }
+      }
+    }
+  }, [user]);
 
   const handleLogout = () => {
     logout();
+    setUserData(null);
     navigate('/login');
   };
 
@@ -26,12 +44,12 @@ const Header = () => {
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
             <Nav className="ms-auto">
-              {user ? (
+              {userData ? (
                 <>
                   <LinkContainer to="/tasks">
                     <Nav.Link>Tasks</Nav.Link>
                   </LinkContainer>
-                  <NavDropdown title={user.name} id="username">
+                  <NavDropdown title={userData.name} id="username">
                     <LinkContainer to="/profile">
                       <NavDropdown.Item>
                         <FaUserCircle className="me-2" /> Profile

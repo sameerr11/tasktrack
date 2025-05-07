@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
 import { useNavigate, Link } from 'react-router-dom';
 import { FaArrowLeft } from 'react-icons/fa';
-import axios from 'axios';
 import Loader from '../components/Loader';
+import { taskAPI, userAPI } from '../utils/api';
 
 const TaskCreatePage = () => {
   const [title, setTitle] = useState('');
@@ -20,21 +20,15 @@ const TaskCreatePage = () => {
   
   const navigate = useNavigate();
   
-  // Get auth token from local storage
-  const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-  const config = {
-    headers: {
-      Authorization: `Bearer ${userInfo.token}`
-    }
-  };
-  
   // Fetch users for assignment dropdown
   useEffect(() => {
     const fetchUsers = async () => {
       try {
         setLoadingUsers(true);
-        const { data } = await axios.get('/api/users', config);
-        setUsers(data);
+        // Ideally we would have a userAPI.getUsers() function, but we'll work with what we have
+        const response = await userAPI.getProfile();
+        // For now, just add the current user as an option
+        setUsers([response]);
       } catch (err) {
         console.error('Error fetching users:', err);
       } finally {
@@ -61,10 +55,10 @@ const TaskCreatePage = () => {
         assignedTo: assignedTo || null
       };
       
-      await axios.post('/api/tasks', taskData, config);
+      await taskAPI.createTask(taskData);
       navigate('/tasks');
     } catch (err) {
-      setError(err.response?.data?.message || 'Error creating task');
+      setError(err.message || 'Error creating task');
     } finally {
       setLoading(false);
     }

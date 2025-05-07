@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
+import { userAPI } from '../utils/api';
 
 const AuthContext = createContext();
 
@@ -18,20 +18,27 @@ export const AuthProvider = ({ children }) => {
     const checkLoggedIn = async () => {
       try {
         const token = localStorage.getItem('token');
+        const userInfo = localStorage.getItem('userInfo');
         
-        if (token) {
-          const config = {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          };
+        if (token && userInfo) {
+          // Set user from localStorage initially
+          setUser(JSON.parse(userInfo));
           
-          const res = await axios.get(`${process.env.REACT_APP_API_URL}/api/users/profile`, config);
-          setUser({ ...res.data, token });
+          // Verify with API
+          try {
+            const userData = await userAPI.getProfile();
+            setUser({ ...userData, token });
+          } catch (err) {
+            // If API verification fails, clear storage
+            localStorage.removeItem('token');
+            localStorage.removeItem('userInfo');
+            setUser(null);
+          }
         }
       } catch (error) {
         console.error('Error checking authentication:', error);
         localStorage.removeItem('token');
+        localStorage.removeItem('userInfo');
         setUser(null);
       } finally {
         setLoading(false);
@@ -45,20 +52,14 @@ export const AuthProvider = ({ children }) => {
   const register = async (name, email, password) => {
     try {
       setError(null);
-      const res = await axios.post(
-        `${process.env.REACT_APP_API_URL}/api/users/register`, 
-        { name, email, password }
-      );
+      const userData = await userAPI.register(name, email, password);
       
-      const { token } = res.data;
-      localStorage.setItem('token', token);
-      setUser(res.data);
+      localStorage.setItem('token', userData.token);
+      localStorage.setItem('userInfo', JSON.stringify(userData));
+      setUser(userData);
       return true;
     } catch (error) {
-      setError(
-        error.response?.data?.message || 
-        'An error occurred during registration'
-      );
+      setError(error.message || 'An error occurred during registration');
       return false;
     }
   };
@@ -67,20 +68,14 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setError(null);
-      const res = await axios.post(
-        `${process.env.REACT_APP_API_URL}/api/users/login`, 
-        { email, password }
-      );
+      const userData = await userAPI.login(email, password);
       
-      const { token } = res.data;
-      localStorage.setItem('token', token);
-      setUser(res.data);
+      localStorage.setItem('token', userData.token);
+      localStorage.setItem('userInfo', JSON.stringify(userData));
+      setUser(userData);
       return true;
     } catch (error) {
-      setError(
-        error.response?.data?.message || 
-        'Invalid email or password'
-      );
+      setError(error.message || 'Invalid email or password');
       return false;
     }
   };
@@ -88,6 +83,7 @@ export const AuthProvider = ({ children }) => {
   // Logout user
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('userInfo');
     setUser(null);
   };
 
