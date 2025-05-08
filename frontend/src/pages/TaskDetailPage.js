@@ -3,7 +3,9 @@ import { Container, Row, Col, Card, Badge, Button, ListGroup, Alert } from 'reac
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { FaEdit, FaTrash, FaArrowLeft } from 'react-icons/fa';
 import Loader from '../components/Loader';
+import AttachmentList from '../components/AttachmentList';
 import { taskAPI } from '../utils/api';
+import { useNotification } from '../context/NotificationContext';
 
 const TaskDetailPage = () => {
   const [task, setTask] = useState(null);
@@ -11,20 +13,22 @@ const TaskDetailPage = () => {
   const [error, setError] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
+  
+  const fetchTask = async () => {
+    try {
+      setLoading(true);
+      const data = await taskAPI.getTaskById(id);
+      setTask(data);
+    } catch (err) {
+      setError(err.message || 'Error fetching task details');
+      showNotification('Error loading task', 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
   
   useEffect(() => {
-    const fetchTask = async () => {
-      try {
-        setLoading(true);
-        const data = await taskAPI.getTaskById(id);
-        setTask(data);
-      } catch (err) {
-        setError(err.message || 'Error fetching task details');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
     fetchTask();
   }, [id]);
   
@@ -33,9 +37,11 @@ const TaskDetailPage = () => {
       try {
         setLoading(true);
         await taskAPI.deleteTask(id);
+        showNotification('Task deleted successfully');
         navigate('/tasks');
       } catch (err) {
         setError(err.message || 'Error deleting task');
+        showNotification('Error deleting task', 'danger');
         setLoading(false);
       }
     }
@@ -128,7 +134,13 @@ const TaskDetailPage = () => {
             </Card.Body>
           </Card>
           
-          {/* Attachments section would go here */}
+          {/* Attachments section */}
+          <AttachmentList 
+            taskId={id} 
+            attachments={task.Attachments || []} 
+            onUpdate={fetchTask}
+          />
+          
           <div className="mt-4">
             <Link to="/tasks" className="btn btn-light">
               <FaArrowLeft /> Back to Tasks

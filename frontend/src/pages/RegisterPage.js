@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Card, Alert } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
 import { userAPI } from '../utils/api';
+
+// Hardcode the same API URL as in api.js
+const API_URL = 'http://56.228.10.78';
 
 const RegisterPage = () => {
   const [name, setName] = useState('');
@@ -10,8 +13,16 @@ const RegisterPage = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [apiUrl, setApiUrl] = useState('');
   
   const navigate = useNavigate();
+  
+  // Check API URL on load
+  useEffect(() => {
+    // Use the hardcoded API URL for consistency
+    setApiUrl(API_URL);
+    console.log('Current API URL:', API_URL);
+  }, []);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,7 +37,10 @@ const RegisterPage = () => {
       setLoading(true);
       setError('');
       
+      console.log('Attempting to register with:', { name, email });
+      
       const response = await userAPI.register(name, email, password);
+      console.log('Registration successful:', response);
       
       // Store user info in localStorage
       localStorage.setItem('userInfo', JSON.stringify(response));
@@ -35,7 +49,18 @@ const RegisterPage = () => {
       // Redirect to dashboard
       navigate('/tasks');
     } catch (err) {
-      setError(err.message || 'Registration failed');
+      console.error('Registration error:', err);
+      // More detailed error handling
+      if (err.response) {
+        console.error('Server response:', err.response.data);
+        setError(err.response.data.message || 'Server error occurred');
+      } else if (err.request) {
+        console.error('No response from server. Request:', err.request);
+        setError('Unable to reach the server. Please check your connection.');
+      } else {
+        console.error('Error message:', err.message);
+        setError(err.message || 'Registration failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -47,6 +72,12 @@ const RegisterPage = () => {
         <Col xs={12} md={6}>
           <Card className="p-4">
             <h2 className="text-center mb-4">Register</h2>
+            
+            {apiUrl && process.env.NODE_ENV === 'development' && (
+              <Alert variant="info" className="small">
+                API URL: {apiUrl}
+              </Alert>
+            )}
             
             {error && <Alert variant="danger">{error}</Alert>}
             

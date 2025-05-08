@@ -4,10 +4,12 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { FaArrowLeft } from 'react-icons/fa';
 import Loader from '../components/Loader';
 import { taskAPI, userAPI } from '../utils/api';
+import { useNotification } from '../context/NotificationContext';
 
 const TaskEditPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -37,13 +39,14 @@ const TaskEditPage = () => {
         setAssignedTo(data.assignedTo?.id || '');
       } catch (err) {
         setError(err.message || 'Error fetching task');
+        showNotification('Error loading task data', 'danger');
       } finally {
         setLoadingTask(false);
       }
     };
     
     fetchTask();
-  }, [id]);
+  }, [id, showNotification]);
   
   // Fetch users for assignment dropdown
   useEffect(() => {
@@ -56,13 +59,14 @@ const TaskEditPage = () => {
         setUsers([response]);
       } catch (err) {
         console.error('Error fetching users:', err);
+        showNotification('Error loading users', 'danger');
       } finally {
         setLoadingUsers(false);
       }
     };
     
     fetchUsers();
-  }, []);
+  }, [showNotification]);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -81,9 +85,11 @@ const TaskEditPage = () => {
       };
       
       await taskAPI.updateTask(id, taskData);
+      showNotification('Task updated successfully!');
       navigate(`/tasks/${id}`);
     } catch (err) {
       setError(err.message || 'Error updating task');
+      showNotification('Error updating task', 'danger');
     } finally {
       setLoading(false);
     }

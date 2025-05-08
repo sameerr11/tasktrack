@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// Hardcode the API URL to ensure it's using the AWS backend
+const API_URL = 'http://56.228.10.78';
+// const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // Helper function to get auth header
 const getAuthHeader = () => {
@@ -81,21 +83,30 @@ export const taskAPI = {
       const formData = new FormData();
       formData.append('file', file);
       
+      // Remove Content-Type header to let the browser set it with the boundary parameter
+      const authHeader = getAuthHeader();
+      
       const response = await axios.post(
         `${API_URL}/api/tasks/${taskId}/attachments`, 
         formData, 
         {
-          ...getAuthHeader(),
           headers: {
-            ...getAuthHeader().headers,
-            'Content-Type': 'multipart/form-data'
-          }
+            ...authHeader.headers,
+            // Let browser set the correct content type with boundary
+          },
+          // Add timeout and show upload progress if needed
+          timeout: 30000
         }
       );
       
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Error uploading attachment');
+      console.error('Upload error:', error);
+      throw new Error(
+        error.response?.data?.message || 
+        error.message || 
+        'Error uploading attachment'
+      );
     }
   },
 
@@ -119,6 +130,8 @@ export const userAPI = {
   // Register user
   register: async (name, email, password) => {
     try {
+      console.log(`Sending registration request to: ${API_URL}/api/users/register`);
+      
       const response = await axios.post(`${API_URL}/api/users/register`, {
         name,
         email,
@@ -127,7 +140,21 @@ export const userAPI = {
       
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.message || 'Error registering user');
+      console.error('Registration error details:', error);
+      
+      if (error.response) {
+        // The server responded with a status code outside the 2xx range
+        console.error('Server error response:', error.response.data);
+        throw new Error(error.response.data.message || `Server error: ${error.response.status}`);
+      } else if (error.request) {
+        // The request was made but no response was received
+        console.error('No response received:', error.request);
+        throw new Error('Could not connect to the server. Please check your network connection.');
+      } else {
+        // Something happened in setting up the request
+        console.error('Request setup error:', error.message);
+        throw new Error(error.message || 'Error registering user');
+      }
     }
   },
 

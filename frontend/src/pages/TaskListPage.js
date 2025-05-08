@@ -6,6 +6,7 @@ import TaskCard from '../components/TaskCard';
 import Loader from '../components/Loader';
 import Message from '../components/Message';
 import { taskAPI } from '../utils/api';
+import { useNotification } from '../context/NotificationContext';
 
 const TaskListPage = () => {
   const [tasks, setTasks] = useState([]);
@@ -15,6 +16,7 @@ const TaskListPage = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalTasks, setTotalTasks] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  const { showNotification } = useNotification();
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -39,6 +41,7 @@ const TaskListPage = () => {
         setError('');
       } catch (error) {
         setError(error.message || 'Failed to load tasks');
+        showNotification('Error loading tasks', 'danger');
         setTasks([]);
       } finally {
         setLoading(false);
@@ -46,7 +49,7 @@ const TaskListPage = () => {
     };
 
     fetchTasks();
-  }, [filters, page]);
+  }, [filters, page, showNotification]);
 
   // Handle filter changes
   const handleFilterChange = (e) => {
@@ -75,6 +78,7 @@ const TaskListPage = () => {
       limit: 6
     });
     setPage(1);
+    showNotification('Filters reset');
   };
 
   // Generate pagination items

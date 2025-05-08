@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { FaArrowLeft } from 'react-icons/fa';
 import Loader from '../components/Loader';
 import { taskAPI, userAPI } from '../utils/api';
+import { useNotification } from '../context/NotificationContext';
 
 const TaskCreatePage = () => {
   const [title, setTitle] = useState('');
@@ -19,6 +20,7 @@ const TaskCreatePage = () => {
   const [error, setError] = useState('');
   
   const navigate = useNavigate();
+  const { showNotification } = useNotification();
   
   // Fetch users for assignment dropdown
   useEffect(() => {
@@ -31,13 +33,14 @@ const TaskCreatePage = () => {
         setUsers([response]);
       } catch (err) {
         console.error('Error fetching users:', err);
+        showNotification('Error loading users', 'danger');
       } finally {
         setLoadingUsers(false);
       }
     };
     
     fetchUsers();
-  }, []);
+  }, [showNotification]);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -56,9 +59,11 @@ const TaskCreatePage = () => {
       };
       
       await taskAPI.createTask(taskData);
+      showNotification('Task created successfully!');
       navigate('/tasks');
     } catch (err) {
       setError(err.message || 'Error creating task');
+      showNotification('Error creating task', 'danger');
     } finally {
       setLoading(false);
     }
