@@ -2,6 +2,10 @@
 
 TaskTrack is a full-stack cloud-native task management application deployed on AWS. It allows users to create, track, and manage tasks with file attachments.
 
+## Live Demo
+- Frontend: [TaskTrack Web App](http://tasktrack-frontend-env.eba-gyzvckku.eu-north-1.elasticbeanstalk.com/)
+- Backend API: [TaskTrack API](http://56.228.10.78/)
+
 ## Features
 - User registration/login with JWT authentication
 - Create/view/edit/delete tasks
@@ -242,6 +246,10 @@ This will start PostgreSQL, backend, and frontend services. The app will be avai
    - Enable encryption at rest
    - Schedule regular backups
 
+### Deployed Application URLs
+- Frontend Web Application: http://tasktrack-frontend-env.eba-gyzvckku.eu-north-1.elasticbeanstalk.com/
+- Backend API: http://56.228.10.78/
+
 ## Project Structure
 ```
 tasktrack/
@@ -280,6 +288,17 @@ tasktrack/
 - **Database**: PostgreSQL/MySQL on RDS
 - **Cloud**: AWS (EC2, S3, RDS, Elastic Beanstalk, VPC, IAM)
 - **DevOps**: Docker, Docker Compose
+
+## PDF Documentation
+The project includes comprehensive PDF documentation with:
+1. Project Overview and Features
+2. Technical Architecture Diagram
+3. AWS Services Utilized
+4. Security Implementation
+5. Deployment Process
+6. Screenshots of Key Application Features
+7. Database Schema
+8. API Endpoints Documentation
 
 ## License
 MIT
